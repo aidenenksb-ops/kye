@@ -431,14 +431,19 @@ onAuthStateChanged(auth, user => {
           return;
         }
 
-try {
-  groupNotice("Step 1: Creating group document...");
+
+        try {
+          groupNotice("Creating group...");
+
+          const groupRef = await addDoc(collection(db, "groups"), {
             name,
             description,
             discoverable: true,
             createdBy: user.uid,
             createdAt: serverTimestamp()
           });
+
+          groupNotice("Group document created. Adding owner...");
 
           await setDoc(
             doc(db, "groups", groupRef.id, "members", user.uid),
