@@ -318,9 +318,10 @@ import {
       });
     });
 
-    onAuthStateChanged(auth, user => {
-      if (user) {
-        startChat(user);
+onAuthStateChanged(auth, user => {
+  if (user) {
+    startChat(user);
+    loadGroups();
       } else {
         if (unsubscribeMessages) unsubscribeMessages();
         unsubscribeMessages = null;
@@ -330,6 +331,272 @@ import {
         showStatus("authStatus", "");
       }
     });
+
+
+    // ===== CHATLY GROUPS =====
+
+    let selectedGroupId = null;
+    let stopGroupMessages = null;
+
+    const groupStatus = document.getElementById("groupStatus");
+    const groupsList = document.getElementById("groupsList");
+    const selectedGroup = document.getElementById("selectedGroup");
+    const groupMessages = document.getElementById("groupMessages");
+    const joinRequests = document.getElementById("joinRequests");
+
+    function groupNotice(message) {
+      groupStatus.textContent = message;
+    }
+
+    async function loadGroups() {
+      if (!auth.currentUser) return;
+
+      try {
+        const q = query(
+          collection(db, "groups"),
+          where("discoverable", "==", true),
+          orderBy("createdAt", "desc")
+        );
+
+        const result = await getDocs(q);
+        groupsList.replaceChildren();
+
+        result.forEach(groupDoc => {
+          const group = groupDoc.data();
+          const card = document.createElement("div");
+          const title = document.createElement("h3");
+          const description = document.createElement("p");
+          const button = document.createElement("button");
+
+          title.textContent = group.name;
+          description.textContent = group.description || "";
+          button.textContent = "Request to join";
+
+          button.addEventListener("click", async () => {
+            try {
+              const user = auth.currentUser;
+              if (!user) return;
+
+              const memberRef = doc(
+                db, "groups", groupDoc.id, "members", user.uid
+              );
+              const member = await getDoc(memberRef);
+
+              if (member.exists()) {
+                await openGroup(groupDoc.id, group.name);
+                return;
+              }
+
+              const requestRef = doc(
+                db, "groups", groupDoc.id, "requests", user.uid
+              );
+
+              await setDoc(requestRef, {
+                uid: user.uid,
+                status: "pending",
+                createdAt: serverTimestamp()
+              });
+
+              groupNotice("Join request sent!");
+            } catch (error) {
+              groupNotice("Request failed: " + error.message);
+            }
+          });
+
+          card.append(title, description, button);
+          groupsList.append(card);
+        });
+      } catch (error) {
+        groupNotice("Couldn't load groups: " + error.message);
+      }
+    }
+
+    document.getElementById("createGroupForm")
+      .addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const user = auth.currentUser;
+        if (!user) {
+          groupNotice("Please sign in first.");
+          return;
+        }
+
+        const name = document.getElementById("groupName")
+          .value.trim();
+        const description = document.getElementById("groupDescription")
+          .value.trim();
+
+        if (!name || name.length > 50 || description.length > 200) {
+          groupNotice("Check the group name and description.");
+          return;
+        }
+
+        try {
+          const groupRef = await addDoc(collection(db, "groups"), {
+            name,
+            description,
+            discoverable: true,
+            createdBy: user.uid,
+            createdAt: serverTimestamp()
+          });
+
+          await setDoc(
+            doc(db, "groups", groupRef.id, "members", user.uid),
+            {
+              uid: user.uid,
+              role: "owner",
+              joinedAt: serverTimestamp()
+            }
+          );
+
+          document.getElementById("createGroupForm").reset();
+          groupNotice("Group created!");
+          await loadGroups();
+          await openGroup(groupRef.id, name);
+        } catch (error) {
+          groupNotice("Couldn't create group: " + error.message);
+        }
+      });
+
+    async function openGroup(groupId, groupName) {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const memberRef = doc(
+        db, "groups", groupId, "members", user.uid
+      );
+      const member = await getDoc(memberRef);
+
+      if (!member.exists()) {
+        groupNotice("You must be approved to enter this group.");
+        return;
+      }
+
+      selectedGroupId = groupId;
+      selectedGroup.textContent = groupName;
+      groupMessages.replaceChildren();
+
+      if (stopGroupMessages) stopGroupMessages();
+
+      const q = query(
+        collection(db, "groups", groupId, "messages"),
+        orderBy("createdAt", "asc")
+      );
+
+      stopGroupMessages = onSnapshot(q, snapshot => {
+        groupMessages.replaceChildren();
+
+        snapshot.forEach(messageDoc => {
+          const message = messageDoc.data();
+          const line = document.createElement("p");
+          line.textContent =
+            (message.name || "Chatly user") + ": " + message.text;
+          groupMessages.append(line);
+        });
+      }, error => {
+        groupNotice("Message error: " + error.message);
+      });
+
+      await loadJoinRequests(groupId);
+    }
+
+    document.getElementById("groupMessageForm")
+      .addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const user = auth.currentUser;
+        const input = document.getElementById("groupMessageText");
+        const text = input.value.trim();
+
+        if (!user || !selectedGroupId || !text || text.length > 1000) {
+          return;
+        }
+
+        try {
+          await addDoc(
+            collection(db, "groups", selectedGroupId, "messages"),
+            {
+              uid: user.uid,
+              name: user.displayName || "Chatly user",
+              text,
+              createdAt: serverTimestamp()
+            }
+          );
+
+          input.value = "";
+          groupNotice("");
+        } catch (error) {
+          groupNotice("Couldn't send message: " + error.message);
+        }
+      });
+
+    async function loadJoinRequests(groupId) {
+      joinRequests.replaceChildren();
+
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const groupSnap = await getDoc(doc(db, "groups", groupId));
+
+      if (!groupSnap.exists() ||
+          groupSnap.data().createdBy !== user.uid) {
+        return;
+      }
+
+      const q = query(
+        collection(db, "groups", groupId, "requests"),
+        where("status", "==", "pending")
+      );
+
+      const result = await getDocs(q);
+      const heading = document.createElement("h3");
+      heading.textContent = "Pending join requests";
+      joinRequests.append(heading);
+
+      result.forEach(requestDoc => {
+        const request = requestDoc.data();
+        const row = document.createElement("div");
+        const label = document.createElement("span");
+        const approve = document.createElement("button");
+
+        label.textContent = "A user wants to join";
+        approve.textContent = "Approve";
+
+        approve.addEventListener("click", async () => {
+          try {
+            const latestGroup = await getDoc(doc(db, "groups", groupId));
+
+            if (!auth.currentUser ||
+                !latestGroup.exists() ||
+                latestGroup.data().createdBy !== auth.currentUser.uid) {
+              throw new Error("Only the group owner can approve requests.");
+            }
+
+            await updateDoc(requestDoc.ref, {
+              status: "approved"
+            });
+
+            await setDoc(
+              doc(db, "groups", groupId, "members", request.uid),
+              {
+                uid: request.uid,
+                role: "member",
+                joinedAt: serverTimestamp()
+              }
+            );
+
+            groupNotice("Member approved!");
+            await loadJoinRequests(groupId);
+          } catch (error) {
+            groupNotice("Approval failed: " + error.message);
+          }
+        });
+
+        row.append(label, approve);
+        joinRequests.append(row);
+      });
+    }
+    
   </script>
 
 
