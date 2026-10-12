@@ -317,5 +317,35 @@
       }
     });
   </script>
+
+
+<section id="groupsSection">
+  <h2>Discover groups</h2>
+  <p>Create a group or request to join one.</p>
+
+  <form id="createGroupForm">
+    <input id="groupName" placeholder="Group name" maxlength="50" required>
+    <input id="groupDescription" placeholder="Group description" maxlength="200">
+    <button type="submit">Create group</button>
+  </form>
+
+  <p id="groupStatus"></p>
+  <div id="groupsList"></div>
+
+  <h3>Selected group</h3>
+  <div id="selectedGroup"></div>
+
+  <h3>Group messages</h3>
+  <div id="groupMessages"></div>
+
+  <form id="groupMessageForm">
+    <input id="groupMessageText" placeholder="Write a message..." maxlength="1000" required>
+    <button type="submit">Send</button>
+  </form>
+
+  <div id="joinRequests"></div>
+</section>
+
+  
 </body>
 </html>
