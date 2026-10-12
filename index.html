@@ -411,25 +411,7 @@ onAuthStateChanged(auth, user => {
       }
     }
 
-    document.getElementById("createGroupForm")
-      .addEventListener("submit", async event => {
-        event.preventDefault();
 
-        const user = auth.currentUser;
-        if (!user) {
-          groupNotice("Please sign in first.");
-          return;
-        }
-
-        const name = document.getElementById("groupName")
-          .value.trim();
-        const description = document.getElementById("groupDescription")
-          .value.trim();
-
-        if (!name || name.length > 50 || description.length > 200) {
-          groupNotice("Check the group name and description.");
-          return;
-        }
 
 
 
