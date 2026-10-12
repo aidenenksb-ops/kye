@@ -3,32 +3,319 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chatly</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: #f0f4ff;
-      display: grid;
-      place-items: center;
-      min-height: 100vh;
+      background: #f1f4fb;
+      color: #20263a;
+    }
+    header {
+      background: #4263eb;
+      color: white;
+      padding: 18px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { margin: 0; font-size: 25px; }
+    main {
+      max-width: 720px;
+      margin: 30px auto;
+      padding: 0 14px;
     }
     .card {
       background: white;
-      padding: 32px;
-      border-radius: 20px;
-      text-align: center;
-      box-shadow: 0 8px 30px #0001;
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 5px 24px #18244a12;
+      margin-bottom: 18px;
     }
-    h1 { color: #4263eb; }
+    h2 { margin-top: 0; }
+    input, button {
+      font: inherit;
+      padding: 12px;
+      border-radius: 9px;
+    }
+    input {
+      width: 100%;
+      border: 1px solid #d8ddec;
+      margin: 6px 0 12px;
+    }
+    button {
+      border: 0;
+      background: #4263eb;
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    .secondary { background: #e9edff; color: #304ac0; }
+    .hidden { display: none !important; }
+    .muted { color: #68718a; font-size: 14px; }
+    #messages {
+      height: 360px;
+      overflow-y: auto;
+      background: #f7f8fc;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 16px 0;
+    }
+    .message {
+      background: white;
+      border: 1px solid #e8ebf4;
+      padding: 10px 12px;
+      border-radius: 12px;
+      margin: 8px 0;
+      overflow-wrap: anywhere;
+    }
+    .message strong { color: #4263eb; }
+    .message time { color: #858da1; font-size: 12px; }
+    #sendForm { display: flex; gap: 8px; }
+    #sendForm input { margin: 0; flex: 1; min-width: 0; }
+    #status { margin-top: 12px; white-space: pre-wrap; }
+    @media (max-width: 480px) {
+      main { margin-top: 16px; }
+      .card { padding: 16px; }
+      #messages { height: 50vh; }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
+  <header>
     <h1>Chatly 💬</h1>
-    <p>Your place to connect and chat.</p>
-    <p>Coming soon!</p>
-  </div>
+    <button id="logout" class="secondary hidden">Sign out</button>
+  </header>
+
+  <main>
+    <section id="authCard" class="card">
+      <h2>Welcome to Chatly</h2>
+      <p class="muted">Sign in or create an account to join the chat.</p>
+
+      <form id="authForm">
+        <label for="name">Display name (for new accounts)</label>
+        <input id="name" maxlength="40" placeholder="Your name"
+               autocomplete="nickname">
+
+        <label for="email">Email address</label>
+        <input id="email" type="email" required
+               autocomplete="email" placeholder="you@example.com">
+
+        <label for="password">Password</label>
+        <input id="password" type="password" required minlength="6"
+               autocomplete="current-password" placeholder="At least 6 characters">
+
+        <button type="submit" id="loginButton">Sign in</button>
+        <button type="button" id="registerButton" class="secondary">
+          Create account
+        </button>
+      </form>
+      <p id="authStatus" class="muted" role="status"></p>
+    </section>
+
+    <section id="chatCard" class="card hidden">
+      <h2>Community chat</h2>
+      <p class="muted">
+        Signed in as <strong id="currentUser"></strong>.
+        Messages are visible to all signed-in Chatly users.
+      </p>
+      <div id="messages" aria-live="polite"></div>
+      <form id="sendForm">
+        <input id="messageInput" maxlength="1000" required
+               placeholder="Write a message..." autocomplete="off">
+        <button id="sendButton" type="submit">Send</button>
+      </form>
+      <p id="chatStatus" class="muted" role="status"></p>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from
+      "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+    import {
+      getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
+      signInWithEmailAndPassword, signOut, updateProfile
+    } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+    import {
+      getFirestore, collection, addDoc, query, orderBy, limit,
+      onSnapshot, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCT-eai87fgaRtcQmcoMTw7nr9AX9BwEwE",
+      authDomain: "chatly-2b761.firebaseapp.com",
+      projectId: "chatly-2b761",
+      storageBucket: "chatly-2b761.firebasestorage.app",
+      messagingSenderId: "314821097344",
+      appId: "1:314821097344:web:472ff0497b81f0b86f3365",
+      measurementId: "G-T81LRRP7PW"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const $ = id => document.getElementById(id);
+    let unsubscribeMessages = null;
+    let busy = false;
+
+    function showStatus(id, message) {
+      $(id).textContent = message;
+    }
+
+    function readableError(error) {
+      const messages = {
+        "auth/email-already-in-use": "That email already has an account. Try signing in.",
+        "auth/invalid-email": "Please enter a valid email address.",
+        "auth/weak-password": "Use a password with at least 6 characters.",
+        "auth/invalid-credential": "Email or password is incorrect.",
+        "auth/too-many-requests": "Too many attempts. Please wait and try again.",
+        "permission-denied": "Firebase denied this action. Check your Firestore rules.",
+        "unavailable": "Firebase is temporarily unavailable. Try again."
+      };
+      return messages[error.code] || error.message || "Something went wrong.";
+    }
+
+    async function withBusy(buttonIds, task) {
+      if (busy) return;
+      busy = true;
+      buttonIds.forEach(id => $(id).disabled = true);
+      try {
+        await task();
+      } catch (error) {
+        console.error(error);
+        showStatus(
+          auth.currentUser ? "chatStatus" : "authStatus",
+          readableError(error)
+        );
+      } finally {
+        busy = false;
+        buttonIds.forEach(id => $(id).disabled = false);
+      }
+    }
+
+    $("authForm").addEventListener("submit", event => {
+      event.preventDefault();
+      withBusy(["loginButton", "registerButton"], async () => {
+        showStatus("authStatus", "Signing in...");
+        await signInWithEmailAndPassword(
+          auth, $("email").value.trim(), $("password").value
+        );
+        showStatus("authStatus", "");
+      });
+    });
+
+    $("registerButton").addEventListener("click", () => {
+      withBusy(["loginButton", "registerButton"], async () => {
+        const name = $("name").value.trim();
+        const email = $("email").value.trim();
+        const password = $("password").value;
+
+        if (!name) {
+          showStatus("authStatus", "Please enter a display name first.");
+          return;
+        }
+        if (password.length < 6) {
+          showStatus("authStatus", "Your password must be at least 6 characters.");
+          return;
+        }
+
+        showStatus("authStatus", "Creating your account...");
+        const result = await createUserWithEmailAndPassword(
+          auth, email, password
+        );
+        await updateProfile(result.user, { displayName: name });
+        showStatus("authStatus", "");
+      });
+    });
+
+    $("logout").addEventListener("click", async () => {
+      await signOut(auth);
+    });
+
+    function startChat(user) {
+      $("authCard").classList.add("hidden");
+      $("chatCard").classList.remove("hidden");
+      $("logout").classList.remove("hidden");
+      $("currentUser").textContent = user.displayName || user.email;
+      showStatus("chatStatus", "Connecting to messages...");
+
+      if (unsubscribeMessages) unsubscribeMessages();
+
+      const messagesQuery = query(
+        collection(db, "messages"),
+        orderBy("createdAt", "desc"),
+        limit(100)
+      );
+
+      unsubscribeMessages = onSnapshot(messagesQuery, snapshot => {
+        const container = $("messages");
+        container.replaceChildren();
+
+        const docs = snapshot.docs.reverse();
+        for (const messageDoc of docs) {
+          const data = messageDoc.data();
+          const article = document.createElement("div");
+          article.className = "message";
+
+          const heading = document.createElement("strong");
+          heading.textContent = data.name || "Chatly user";
+
+          const body = document.createElement("div");
+          body.textContent = data.text || "";
+
+          const time = document.createElement("time");
+          if (data.createdAt) {
+            time.textContent = " · " +
+              data.createdAt.toDate().toLocaleString();
+          }
+
+          article.append(heading, body, time);
+          container.appendChild(article);
+        }
+
+        container.scrollTop = container.scrollHeight;
+        showStatus("chatStatus", "");
+      }, error => {
+        console.error(error);
+        showStatus("chatStatus", readableError(error));
+      });
+    }
+
+    $("sendForm").addEventListener("submit", event => {
+      event.preventDefault();
+      withBusy(["sendButton"], async () => {
+        const user = auth.currentUser;
+        const text = $("messageInput").value.trim();
+        if (!user || !text) return;
+
+        showStatus("chatStatus", "Sending...");
+        await addDoc(collection(db, "messages"), {
+          text,
+          uid: user.uid,
+          name: user.displayName || user.email,
+          createdAt: serverTimestamp()
+        });
+        $("messageInput").value = "";
+        showStatus("chatStatus", "");
+      });
+    });
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        startChat(user);
+      } else {
+        if (unsubscribeMessages) unsubscribeMessages();
+        unsubscribeMessages = null;
+        $("chatCard").classList.add("hidden");
+        $("authCard").classList.remove("hidden");
+        $("logout").classList.add("hidden");
+        showStatus("authStatus", "");
+      }
+    });
+  </script>
 </body>
 </html>
