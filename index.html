@@ -139,10 +139,24 @@
       getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
       signInWithEmailAndPassword, signOut, updateProfile
     } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
-    import {
-      getFirestore, collection, addDoc, query, orderBy, limit,
-      onSnapshot, serverTimestamp
-    } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDoc,
+  getDocs,
+  doc,
+  setDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
 
     const firebaseConfig = {
       apiKey: "AIzaSyCT-eai87fgaRtcQmcoMTw7nr9AX9BwEwE",
