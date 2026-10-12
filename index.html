@@ -431,8 +431,8 @@ onAuthStateChanged(auth, user => {
           return;
         }
 
-        try {
-          const groupRef = await addDoc(collection(db, "groups"), {
+try {
+  groupNotice("Step 1: Creating group document...");
             name,
             description,
             discoverable: true,
@@ -456,6 +456,9 @@ onAuthStateChanged(auth, user => {
         } catch (error) {
           groupNotice("Couldn't create group: " + error.message);
         }
+
+          groupNotice("Step 1 succeeded. Step 2: Adding owner membership...");
+    
       });
 
     async function openGroup(groupId, groupName) {
